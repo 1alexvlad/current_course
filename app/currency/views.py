@@ -1,39 +1,44 @@
 import requests
-from datetime import datetime
 
 from .models import CurrencyModel
 
 from django.views import View
 from django.http import JsonResponse
-from django.conf import settings
 from django.utils import timezone
-
+from django.db.models import Max
 
 
 class CurrentView(View):
     def get(self, request):
-        url = "http://apilayer.net/api/live?access_key=" + settings.API_KEY
-        response = requests.get(url)
-        data = response.json()
+        last_10_records = CurrencyModel.objects.all()[:10]
 
-        value = data['quotes']['USDRUB']
+        if last_10_records:
+            last_datetime = last_10_records[0].datetime
+            current_datetime = timezone.now()
 
-        last_value = CurrencyModel.objects.all().order_by('-datetime')[:1]
+            if (current_datetime - last_datetime).total_seconds() > 10:
+                url = "http://apilayer.net/api/live?access_key=89696ec611480d51b74c31ce00f2951f"
+                response = requests.get(url)
+                data = response.json()
+                value = data['quotes']['USDRUB']
 
-        if last_value:
-            last_datetime = last_value[0].datetime
-            current_datetime = timezone.now() 
-
-            time_diff = current_datetime - last_datetime
-
-            if time_diff.total_seconds() > 10:
                 CurrencyModel.objects.create(price=value)
+
+                last_10_records = CurrencyModel.objects.all()[:10]             
+
         else:
+            url = "http://apilayer.net/api/live?access_key=89696ec611480d51b74c31ce00f2951f"
+            response = requests.get(url)
+            data = response.json()
+            value = data['quotes']['USDRUB']
+            
             CurrencyModel.objects.create(price=value)
-
-        history_last_10 = CurrencyModel.objects.all().order_by('-datetime')[:10]
-
+            last_10_records = CurrencyModel.objects.all()[:10]
+        
         return JsonResponse({
-            'Цена': value,
-            'Последние 10 запросов': [{'datetime': req.datetime.strftime('%Y-%m-%d %H:%M:%S'), 'price': req.price} for req in history_last_10]
+            'price': value,
+            'last_10_records': [
+                {'datetime': req.datetime.strftime('%Y-%m-%d %H:%M:%S'), 'price': req.price}
+                for req in last_10_records
+            ]
         })
